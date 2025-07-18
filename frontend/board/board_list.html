@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시글 목록</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <script src="/assets/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="/index.html" class="nav-brand">🚀 MSA Project</a>
+            <div class="nav-links">
+                <a href="/board/board_list.html" class="nav-link">게시판</a>
+                <a href="/blog/blog_list.html" class="nav-link">블로그</a>
+            </div>
+            <div id="auth-links" class="nav-auth"></div>
+        </div>
+    </nav>
+
+    <main class="container board-page-container"> <h1 class="board-page-title">게시글 목록</h1>
+
+        <div class="board-action-buttons">
+            <a href="/board/board_post.html" class="btn btn-primary">새 글 작성</a>
+        </div>
+
+        <div class="table-container">
+            <table class="board-list-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>제목</th>
+                        <th>작성자</th>
+                        <th>조회수</th>
+                        <th>작성일</th>
+                    </tr>
+                </thead>
+                <tbody id="posts-list">
+                    </tbody>
+            </table>
+        </div>
+
+        <div id="no-posts-message" class="board-no-posts" style="display:none;">
+            게시글이 없습니다. 첫 게시글을 작성해보세요!
+        </div>
+
+        <div class="board-pagination">
+            <button id="prev-page" class="btn btn-secondary">이전</button>
+            <span id="current-page">1</span>
+            <button id="next-page" class="btn btn-secondary">다음</button>
+        </div>
+    </main>
+    
+    <script>
+        // auth.js에 정의된 API_BASE_URL을 사용
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 네비게이션 바 렌더링 함수 호출
+            await renderNavbar(); 
+            
+            let currentPage = 1;
+            const limit = 10; // 한 페이지에 표시할 게시글 수
+
+            const postsList = document.getElementById('posts-list');
+            const noPostsMessage = document.getElementById('no-posts-message');
+            const prevPageBtn = document.getElementById('prev-page');
+            const nextPageBtn = document.getElementById('next-page');
+            const currentPageSpan = document.getElementById('current-page');
+
+            async function fetchPosts(page) {
+                const skip = (page - 1) * limit;
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/board/posts/?skip=${skip}&limit=${limit}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const posts = await response.json();
+                    
+                    postsList.innerHTML = ''; // 기존 목록 비우기
+
+                    if (posts.length === 0 && page === 1) {
+                        noPostsMessage.style.display = 'block';
+                        prevPageBtn.disabled = true;
+                        nextPageBtn.disabled = true;
+                    } else {
+                        noPostsMessage.style.display = 'none';
+                        posts.forEach(post => {
+                            const row = document.createElement('tr');
+                            const createdAt = new Date(post.created_at);
+                            const formattedDate = createdAt.toLocaleString('ko-KR', {
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: false
+                            });
+
+                            row.innerHTML = `
+                                <td>${post.id}</td>
+                                <td><a href="/api/board/posts/${post.id}">${post.title}</a></td>
+                                <td>${post.nickname}</td>
+                                <td>${post.views}</td>
+                                <td>${formattedDate}</td>
+                            `;
+                            postsList.appendChild(row);
+                        });
+
+                        prevPageBtn.disabled = page === 1;
+                        const nextResponse = await fetch(`${API_BASE_URL}/api/board/posts/?skip=${page * limit}&limit=1`);
+                        const nextPosts = await nextResponse.json();
+                        nextPageBtn.disabled = nextPosts.length === 0;
+                    }
+                    currentPageSpan.textContent = page;
+
+                } catch (error) {
+                    console.error('게시글을 불러오는 중 오류 발생:', error);
+                    postsList.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red;">게시글을 불러오지 못했습니다.</td></tr>`;
+                    noPostsMessage.style.display = 'none';
+                    prevPageBtn.disabled = true;
+                    nextPageBtn.disabled = true;
+                }
+            }
+
+            prevPageBtn.addEventListener('click', () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    fetchPosts(currentPage);
+                }
+            });
+
+            nextPageBtn.addEventListener('click', () => {
+                currentPage++;
+                fetchPosts(currentPage);
+            });
+
+            fetchPosts(currentPage); // 초기 로드
+        });
+    </script>
+</body>
+</html>

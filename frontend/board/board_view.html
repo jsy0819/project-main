@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시글 보기</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <script src="/assets/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="/index.html" class="nav-brand">🚀 MSA Project</a>
+            <div class="nav-links">
+                <a href="/board/board_list.html" class="nav-link">게시판</a>
+                <a href="/blog/blog_list.html" class="nav-link">블로그</a>
+            </div>
+            <div id="auth-links" class="nav-auth"></div>
+        </div>
+    </nav>
+
+    <main class="container board-page-container"> <div id="post-detail">
+            <div class="post-detail-wrapper">
+                <h2 id="post-title" class="board-section-heading"></h2>
+                <div class="post-detail-meta">
+                    <span id="post-nickname"></span>
+                    <span>
+                        <span id="post-created-at"></span> | 조회수: <span id="post-views"></span>
+                    </span>
+                </div>
+            </div>
+
+            <div id="post-content" class="post-content-area"></div>
+
+            <div id="post-files" class="post-files-area" style="display:none;">
+                <p>첨부 파일:</p>
+                </div>
+
+            <div class="board-action-buttons">
+                <button id="edit-post-btn" class="btn btn-secondary">수정</button>
+                <button id="delete-post-btn" class="btn btn-danger">삭제</button>
+                <button id="list-btn" class="btn btn-primary" onclick="location.href='/board_list.html'">목록으로</button>
+            </div>
+        </div>
+
+        <div class="comment-section-wrapper">
+            <h3 class="board-section-heading">댓글</h3>
+            <div id="comments-list" class="comment-list-container">
+                </div>
+            <div id="no-comments-message" style="text-align: center; color: #666; margin-top: 20px; display:none;">
+                아직 댓글이 없습니다. 첫 댓글을 남겨보세요!
+            </div>
+
+            <div class="comment-form-panel">
+                <h4 class="board-section-heading" style="font-size:1.4rem; border-bottom: none; padding-bottom: 0; margin-top:0;">댓글 작성</h4>
+                <form id="comment-form">
+                    <div>
+                        <label for="comment-nickname">닉네임:</label>
+                        <input type="text" id="comment-nickname" name="nickname" required>
+                    </div>
+                    <div>
+                        <label for="comment-password">비밀번호:</label>
+                        <input type="password" id="comment-password" name="password" required>
+                    </div>
+                    <div>
+                        <label for="comment-content">내용:</label>
+                        <textarea id="comment-content" name="content" rows="5" required></textarea>
+                    </div>
+                    <p id="comment-error-message" class="error-message" style="display:none;"></p>
+                    <div class="comment-submit-area">
+                        <button type="submit" class="btn btn-primary">댓글 작성</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <div id="password-modal" class="modal-overlay">
+        <div class="modal-content-box">
+            <h3 id="modal-title">비밀번호를 입력하세요</h3>
+            <p id="modal-message">게시글/댓글을 수정 또는 삭제하려면 비밀번호를 입력해야 합니다.</p>
+            <input type="password" id="modal-password-input" placeholder="비밀번호" />
+            <div id="modal-error-message" class="modal-error-message" style="display:none;"></div>
+            <div class="modal-buttons-group">
+                <button id="modal-confirm-btn" class="btn btn-primary">확인</button>
+                <button id="modal-cancel-btn" class="btn btn-secondary">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // auth.js에 정의된 API_BASE_URL을 사용
+        document.addEventListener('DOMContentLoaded', async () => {
+            await renderNavbar();
+
+            const postId = window.location.pathname.split('/').pop();
+            const postTitle = document.getElementById('post-title');
+            const postNickname = document.getElementById('post-nickname');
+            const postCreatedAt = document.getElementById('post-created-at');
+            const postViews = document.getElementById('post-views');
+            const postContent = document.getElementById('post-content');
+            const postFilesDiv = document.getElementById('post-files');
+            const postFilesList = document.getElementById('post-files');
+            const editPostBtn = document.getElementById('edit-post-btn');
+            const deletePostBtn = document.getElementById('delete-post-btn');
+
+            const commentsList = document.getElementById('comments-list');
+            const noCommentsMessage = document.getElementById('no-comments-message');
+            const commentForm = document.getElementById('comment-form');
+            const commentErrorMessageDiv = document.getElementById('comment-error-message');
+
+            // 모달 요소
+            const passwordModal = document.getElementById('password-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const modalMessage = document.getElementById('modal-message');
+            const modalPasswordInput = document.getElementById('modal-password-input');
+            const modalErrorMessage = document.getElementById('modal-error-message');
+            const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+            const modalCancelBtn = document.getElementById('modal-cancel-btn');
+
+            let currentOperation = null; // 'edit_post', 'delete_post', 'edit_comment', 'delete_comment'
+            let targetCommentId = null; // 댓글 수정/삭제 시 대상 댓글 ID
+
+            async function fetchPostDetail() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/board/posts/${postId}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const post = await response.json();
+
+                    postTitle.textContent = post.title;
+                    postNickname.textContent = `작성자: ${post.nickname}`;
+                    
+                    const createdAt = new Date(post.created_at);
+                    const formattedDate = createdAt.toLocaleString('ko-KR', {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit', hour12: false
+                    });
+                    postCreatedAt.textContent = formattedDate;
+                    postViews.textContent = post.views;
+                    postContent.textContent = post.content;
+
+                    // 파일 목록 표시
+                    if (post.files && post.files.length > 0) {
+                        postFilesDiv.style.display = 'block';
+                        postFilesList.innerHTML = '<p>첨부 파일:</p>';
+                        post.files.forEach(file => {
+                            const fileLink = document.createElement('a');
+                            fileLink.href = `/static/board_files/${file.filepath}`;
+                            fileLink.textContent = file.filename;
+                            fileLink.download = file.filename;
+                            postFilesList.appendChild(fileLink);
+                        });
+                    } else {
+                        postFilesDiv.style.display = 'none';
+                    }
+
+                    fetchComments(); // 게시글 로드 후 댓글 로드
+                } catch (error) {
+                    console.error('게시글 상세 정보를 불러오는 중 오류 발생:', error);
+                    alert('게시글을 불러오지 못했습니다.');
+                    window.location.href = '/board_list.html';
+                }
+            }
+
+            async function fetchComments() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/board/posts/${postId}/comments/`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const comments = await response.json();
+                    commentsList.innerHTML = '';
+
+                    if (comments.length === 0) {
+                        noCommentsMessage.style.display = 'block';
+                    } else {
+                        noCommentsMessage.style.display = 'none';
+                        comments.forEach(comment => {
+                            const commentDiv = document.createElement('div');
+                            commentDiv.classList.add('comment-item');
+
+                            const createdAt = new Date(comment.created_at);
+                            const formattedDate = createdAt.toLocaleString('ko-KR', {
+                                year: 'numeric', month: '2-digit', day: '2-digit',
+                                hour: '2-digit', minute: '2-digit', hour12: false
+                            });
+
+                            commentDiv.innerHTML = `
+                                <div class="comment-meta">
+                                    <span><strong>${comment.nickname}</strong></span>
+                                    <span>${formattedDate}</span>
+                                </div>
+                                <div class="comment-content-text">${comment.content}</div>
+                                <div class="comment-actions-buttons">
+                                    <button class="btn btn-secondary btn-sm edit-comment-btn" data-comment-id="${comment.id}" data-comment-content="${comment.content}">수정</button>
+                                    <button class="btn btn-danger btn-sm delete-comment-btn" data-comment-id="${comment.id}">삭제</button>
+                                </div>
+                            `;
+                            commentsList.appendChild(commentDiv);
+                        });
+
+                        document.querySelectorAll('.edit-comment-btn').forEach(button => {
+                            button.onclick = (e) => {
+                                currentOperation = 'edit_comment';
+                                targetCommentId = e.target.dataset.commentId;
+                                const currentContent = e.target.dataset.commentContent;
+                                showPasswordModal('댓글 수정', '댓글을 수정하려면 비밀번호를 입력하세요.', currentContent);
+                            };
+                        });
+                        document.querySelectorAll('.delete-comment-btn').forEach(button => {
+                            button.onclick = (e) => {
+                                currentOperation = 'delete_comment';
+                                targetCommentId = e.target.dataset.commentId;
+                                showPasswordModal('댓글 삭제', '댓글을 삭제하려면 비밀번호를 입력하세요.');
+                            };
+                        });
+                    }
+                } catch (error) {
+                    console.error('댓글을 불러오는 중 오류 발생:', error);
+                    commentsList.innerHTML = `<div style="text-align:center; color:red;">댓글을 불러오지 못했습니다.</div>`;
+                }
+            }
+
+            editPostBtn.addEventListener('click', () => {
+                currentOperation = 'edit_post';
+                showPasswordModal('게시글 수정', '게시글을 수정하려면 비밀번호를 입력하세요.');
+            });
+
+            deletePostBtn.addEventListener('click', () => {
+                currentOperation = 'delete_post';
+                showPasswordModal('게시글 삭제', '게시글을 삭제하려면 비밀번호를 입력하세요.');
+            });
+
+            function showPasswordModal(title, message, currentContent = '') {
+                modalTitle.textContent = title;
+                modalMessage.textContent = message;
+                modalPasswordInput.value = '';
+                modalErrorMessage.style.display = 'none';
+                passwordModal.style.display = 'flex';
+
+                if (currentOperation === 'edit_comment' && currentContent) {
+                    modalPasswordInput.dataset.currentCommentContent = currentContent; // 기존 내용을 데이터셋에 저장
+                }
+            }
+
+            modalConfirmBtn.addEventListener('click', async () => {
+                const password = modalPasswordInput.value;
+                if (!password) {
+                    modalErrorMessage.textContent = '비밀번호를 입력해주세요.';
+                    modalErrorMessage.style.display = 'block';
+                    return;
+                }
+
+                modalErrorMessage.style.display = 'none';
+
+                try {
+                    let response;
+                    let successMessage;
+                    let redirectUrl;
+                    let bodyData = { password: password }; // JSON.stringify를 위한 객체
+
+                    if (currentOperation === 'edit_post') {
+                        // 게시글 수정은 board_post_edit_form.html (또는 새로운 post_form_board.html)로 이동
+                        window.location.href = `/board/edit/${postId}`; 
+                        return;
+                    } else if (currentOperation === 'delete_post') {
+                        response = await fetch(`${API_BASE_URL}/api/board/posts/${postId}`, {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(bodyData)
+                        });
+                        successMessage = '게시글이 삭제되었습니다.';
+                        redirectUrl = '/board_list.html'; // 목록 페이지로 이동
+                    } else if (currentOperation === 'edit_comment') {
+                        const currentCommentContent = modalPasswordInput.dataset.currentCommentContent;
+                        const newCommentContent = prompt("수정할 댓글 내용을 입력하세요:", currentCommentContent || "");
+                        if (newCommentContent === null) { // 사용자가 취소한 경우
+                            passwordModal.style.display = 'none';
+                            return;
+                        }
+                        bodyData.content = newCommentContent;
+                        response = await fetch(`${API_BASE_URL}/api/board/comments/${targetCommentId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(bodyData)
+                        });
+                        successMessage = '댓글이 수정되었습니다.';
+                        redirectUrl = `/board/view/${postId}`; // 상세 페이지 새로고침
+                    } else if (currentOperation === 'delete_comment') {
+                        response = await fetch(`${API_BASE_URL}/api/board/comments/${targetCommentId}`, {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(bodyData)
+                        });
+                        successMessage = '댓글이 삭제되었습니다.';
+                        redirectUrl = `/board/view/${postId}`; // 상세 페이지 새로고침
+                    }
+
+                    if (response.ok) {
+                        alert(successMessage);
+                        passwordModal.style.display = 'none';
+                        if (currentOperation === 'edit_comment' || currentOperation === 'delete_comment') {
+                             fetchComments(); // 댓글만 새로고침
+                        } else {
+                             window.location.href = redirectUrl; // 게시글 삭제 시 목록으로 이동
+                        }
+                    } else {
+                        const errorData = await response.json();
+                        modalErrorMessage.textContent = errorData.detail || '비밀번호가 일치하지 않습니다.';
+                        modalErrorMessage.style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error('API 호출 중 오류 발생:', error);
+                    modalErrorMessage.textContent = '오류가 발생했습니다. 다시 시도해주세요.';
+                    modalErrorMessage.style.display = 'block';
+                }
+            });
+
+            modalCancelBtn.addEventListener('click', () => {
+                passwordModal.style.display = 'none';
+            });
+
+            commentForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                commentErrorMessageDiv.style.display = 'none';
+                commentErrorMessageDiv.textContent = '';
+
+                const formData = new FormData();
+                formData.append('nickname', document.getElementById('comment-nickname').value);
+                formData.append('password', document.getElementById('comment-password').value);
+                formData.append('content', document.getElementById('comment-content').value);
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/board/posts/${postId}/comments/`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        document.getElementById('comment-nickname').value = '';
+                        document.getElementById('comment-password').value = '';
+                        document.getElementById('comment-content').value = '';
+                        fetchComments();
+                    } else {
+                        const errorData = await response.json();
+                        commentErrorMessageDiv.textContent = errorData.detail || '댓글 작성에 실패했습니다.';
+                        commentErrorMessageDiv.style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error('네트워크 오류:', error);
+                    commentErrorMessageDiv.textContent = '네트워크 오류로 댓글 작성에 실패했습니다.';
+                    commentErrorMessageDiv.style.display = 'block';
+                }
+            });
+
+            fetchPostDetail();
+        });
+    </script>
+</body>
+</html>

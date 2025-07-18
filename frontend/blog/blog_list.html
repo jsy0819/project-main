@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>기술 블로그</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Raleway">
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+<div class="w3-content">
+    <nav class="navbar">
+        <div class="container">
+            <a href="/index.html" class="nav-brand">🚀 MSA Project</a>
+            <div class="nav-links">
+                <a href="/board/board_list.html" class="nav-link">게시판</a>
+                <a href="/blog/blog_list.html" class="nav-link">블로그</a>
+            </div>
+            <div id="auth-links" class="nav-auth"></div>
+                <a href="/blog/post_form.html" class="nav-link w3-button btn-primary" style="margin-right: 10px;">글 작성</a>
+        </div>
+    </nav>
+
+    <header class="w3-container w3-center w3-padding-32">
+        <h1><b>MY BLOG</b></h1>
+        <p>Welcome to the blog of <span class="w3-tag">unknown</span></p>
+    </header>
+
+    <main class="container">
+        <div id="blog-grid-container" class="grid-container">
+            </div>
+        <div id="loading-indicator" style="text-align: center; padding: 2rem; display: none;">
+            <p>Loading more posts...</p>
+        </div>
+    </main>
+</div>
+
+<script src="/assets/js/auth.js"></script>
+<script>
+    const gridContainer = document.getElementById('blog-grid-container');
+    const loadingIndicator = document.getElementById('loading-indicator');
+    
+    // --- 무한 스크롤을 위한 상태 변수 ---
+    let currentPage = 1;
+    let isLoading = false; // 중복 요청 방지를 위한 플래그
+    let hasMore = true;    // 더 이상 불러올 데이터가 없는지 확인하는 플래그
+    const POSTS_PER_PAGE = 9;
+
+    async function fetchAndRenderBlog(page) {
+        // 이미 로딩 중이거나 더 이상 데이터가 없으면 함수를 즉시 종료
+        if (isLoading || !hasMore) return;
+
+        isLoading = true;
+        loadingIndicator.style.display = 'block';
+
+        try {
+            const response = await fetch(`/api/blog/articles?page=${page}&size=${POSTS_PER_PAGE}`);
+            if (!response.ok) throw new Error('데이터 로딩 실패');
+            
+            const data = await response.json();
+            
+            if (data.items.length === 0) {
+                // 받아온 데이터가 없으면, 더 이상 로드할 게시물이 없다고 판단
+                hasMore = false;
+                loadingIndicator.innerText = "모든 글을 불러왔습니다.";
+                return;
+            }
+
+            renderArticles(data.items);
+            currentPage++; // 다음 페이지를 준비
+
+        } catch (error) {
+            loadingIndicator.innerHTML = `<p style="color:red;">${error.message}</p>`;
+        } finally {
+            isLoading = false;
+            // 로딩이 끝나면 로딩 표시를 숨기지 않고, hasMore가 false일 때만 텍스트 변경
+            if (!hasMore) {
+                loadingIndicator.style.display = 'block';
+            } else {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+    }
+
+    function renderArticles(articles) {
+        // gridContainer.innerHTML = ''; <-- 이 줄을 삭제하여 기존 내용을 유지합니다.
+        
+        articles.forEach(article => {
+            const imageUrl = article.image_url || 'https://www.w3schools.com/w3images/woods.jpg';
+            const gridItem = `
+                <a href="/blog/blog_detail.html?id=${article.id}" class="grid-item">
+                    <img src="${imageUrl}" alt="${article.title}">
+                    <div class="grid-item-overlay">
+                        <span>${article.title}</span>
+                    </div>
+                </a>
+            `;
+            gridContainer.insertAdjacentHTML('beforeend', gridItem);
+        });
+    }
+
+    // --- 스크롤 이벤트 리스너 추가 ---
+    window.addEventListener('scroll', () => {
+        // 사용자가 페이지 맨 아래 근처로 스크롤했는지 확인
+        // (전체 높이 - 현재 스크롤 위치)가 브라우저 창 높이보다 작으면
+        if (document.documentElement.scrollHeight - window.scrollY - window.innerHeight < 200) {
+            fetchAndRenderBlog(currentPage);
+        }
+    });
+
+    // 페이지가 처음 로드될 때 실행
+    document.addEventListener('DOMContentLoaded', () => {
+        renderNavbar();
+        fetchAndRenderBlog(1);
+    });
+</script>
+</body>
+</html>

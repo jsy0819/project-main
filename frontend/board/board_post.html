@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시글 작성/수정</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <script src="/assets/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="/index.html" class="nav-brand">🚀 MSA Project</a>
+            <div class="nav-links">
+                <a href="/board/board_list.html" class="nav-link">게시판</a>
+                <a href="/blog/blog_list.html" class="nav-link">블로그</a>
+            </div>
+            <div id="auth-links" class="nav-auth"></div>
+        </div>
+    </nav>
+    <main class="container">
+        <div class="form-container">
+            <h1 id="form-title">새 게시글 작성</h1>
+            <form id="board-post-form">
+                <p id="error-message" class="error-message" style="display:none;"></p>
+                
+                <div id="nickname-group">
+                    <label for="nickname">작성자:</label>
+                    <input type="text" id="nickname" name="nickname" required>
+                </div>
+
+                <div id="password-group">
+                    <label for="password">비밀번호:</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+
+                <div>
+                    <label for="title">제목:</label>
+                    <input type="text" id="title" name="title" required>
+                </div>
+                <div>
+                    <label for="content">내용:</label>
+                    <textarea id="content" name="content" rows="15" required></textarea>
+                </div>
+                
+                <div>
+                    <label for="files">첨부 파일:</label>
+                    <input type="file" id="files" name="files" multiple>
+                    <div id="current-files-list">
+                        </div>
+                </div>
+
+                <button type="submit" id="submit-btn" class="btn btn-secondary" style="width: 100%; margin-top: 10px;">저장</button>
+                <button type="button" class="btn btn-secondary" style="width: 100%; margin-top: 10px; background-color: hsl(115, 89%, 59%);" onclick="window.history.back()">취소</button>
+            </form>
+        </div>
+    </main>
+    <script>
+        // auth.js에 정의된 API_BASE_URL을 사용
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 네비게이션 바 렌더링 (게시판은 로그인 정보와 무관하게 렌더링)
+            await renderNavbar();
+
+            const form = document.getElementById('board-post-form');
+            const titleInput = document.getElementById('title');
+            const contentInput = document.getElementById('content');
+            const nicknameInput = document.getElementById('nickname');
+            const passwordInput = document.getElementById('password');
+            const filesInput = document.getElementById('files');
+            const formTitle = document.getElementById('form-title');
+            const submitBtn = document.getElementById('submit-btn');
+            const errorEl = document.getElementById('error-message');
+            const nicknameGroup = document.getElementById('nickname-group');
+            const passwordGroup = document.getElementById('password-group');
+            const currentFilesListDiv = document.getElementById('current-files-list');
+
+            // URL에서 postId를 가져와서 수정 모드인지 확인
+            const urlPathParts = window.location.pathname.split('/');
+            const postId = urlPathParts[urlPathParts.length - 1]; // 마지막 부분이 ID
+            const isEditMode = (urlPathParts[urlPathParts.length - 2] === 'edit') && !isNaN(postId);
+
+            formTitle.innerText = isEditMode ? '게시글 수정' : '새 게시글 작성';
+            submitBtn.innerText = isEditMode ? '수정 완료' : '저장';
+
+            if (isEditMode) {
+                // 수정 모드: 닉네임 필드는 비활성화 또는 숨김, 비밀번호는 수정/삭제 시에만 사용
+                nicknameInput.disabled = true; // 닉네임 수정 불가
+                // passwordInput은 제출 시에만 필요하므로, 로드 시에는 비워둡니다.
+                
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/board/posts/${postId}`);
+                    if (!response.ok) throw new Error('게시글 정보를 불러오는데 실패했습니다.');
+                    
+                    const post = await response.json();
+
+                    nicknameInput.value = post.nickname;
+                    titleInput.value = post.title;
+                    contentInput.value = post.content;
+
+                    // 기존 파일 목록 표시
+                    if (post.files && post.files.length > 0) {
+                        currentFilesListDiv.innerHTML = '<p style="margin-top:10px; font-weight:bold;">현재 첨부 파일:</p>';
+                        post.files.forEach(file => {
+                            const fileItem = document.createElement('div');
+                            fileItem.style.marginBottom = '8px';
+                            fileItem.innerHTML = `
+                                <a href="/static/board_files/${file.filepath}" target="_blank">${file.filename}</a>
+                                <button type="button" class="btn btn-danger btn-sm delete-file-btn" data-file-id="${file.id}">삭제</button>
+                            `;
+                            currentFilesListDiv.appendChild(fileItem);
+                        });
+
+                        // 파일 삭제 버튼 이벤트 리스너
+                        currentFilesListDiv.querySelectorAll('.delete-file-btn').forEach(button => {
+                            button.addEventListener('click', async (e) => {
+                                const fileIdToDelete = e.target.dataset.file-id;
+                                if (confirm('정말로 이 파일을 삭제하시겠습니까? (비밀번호 확인 필요)')) {
+                                    const deletePassword = prompt('파일 삭제를 위해 비밀번호를 입력해주세요:');
+                                    if (!deletePassword) {
+                                        alert('비밀번호가 입력되지 않았습니다. 파일 삭제를 취소합니다.');
+                                        return;
+                                    }
+                                    try {
+                                        const delResponse = await fetch(`${API_BASE_URL}/api/board/files/${fileIdToDelete}`, {
+                                            method: 'DELETE',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ password: deletePassword }),
+                                            credentials: 'include'
+                                        });
+                                        if (delResponse.ok) {
+                                            alert('파일이 삭제되었습니다.');
+                                            e.target.closest('div').remove(); // UI에서 파일 항목 제거
+                                        } else {
+                                            const errorData = await delResponse.json();
+                                            alert(`파일 삭제 실패: ${errorData.detail || delResponse.statusText}`);
+                                        }
+                                    } catch (err) {
+                                        console.error('파일 삭제 중 오류 발생:', err);
+                                        alert('파일 삭제 중 네트워크 오류가 발생했습니다.');
+                                    }
+                                }
+                            });
+                        });
+                    }
+
+                } catch(error) {
+                    errorEl.innerText = error.message;
+                    errorEl.style.display = 'block';
+                    alert('게시글 정보를 불러오는 중 오류가 발생했습니다. 목록으로 돌아갑니다.');
+                    window.location.href = '/board_list.html';
+                }
+            } else {
+                // 새 글 작성 모드: 닉네임과 비밀번호 필드 모두 활성 상태
+                nicknameInput.required = true;
+                passwordInput.required = true;
+            }
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                errorEl.innerText = '';
+                errorEl.style.display = 'none';
+                submitBtn.disabled = true;
+                submitBtn.innerText = '저장 중...';
+
+                const formData = new FormData();
+                formData.append('title', titleInput.value);
+                formData.append('content', contentInput.value);
+                formData.append('password', passwordInput.value); // 비밀번호는 항상 필요
+
+                if (!isEditMode) { // 새 글 작성 시에만 닉네임 추가
+                    formData.append('nickname', nicknameInput.value);
+                }
+
+                for (let i = 0; i < filesInput.files.length; i++) {
+                    formData.append('files', filesInput.files[i]);
+                }
+
+                try {
+                    let response;
+                    if (isEditMode) {
+                        // 수정 시에는 PUT/PATCH 요청
+                        response = await fetch(`${API_BASE_URL}/api/board/posts/${postId}`, {
+                            method: 'PUT', // 또는 PATCH
+                            body: formData // FormData로 바로 보낼 수 있음
+                        });
+                    } else {
+                        // 새 글 작성 시에는 POST 요청
+                        response = await fetch(`${API_BASE_URL}/api/board/posts/`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                    }
+
+                    if (response.ok) {
+                        const savedPost = await response.json(); // 응답에서 ID를 얻기 위해
+                        alert(isEditMode ? '게시글이 성공적으로 수정되었습니다.' : '게시글이 성공적으로 작성되었습니다.');
+                        window.location.href = `/board/view/${savedPost.id}`; // 상세 페이지로 이동
+                    } else {
+                        const errorData = await response.json();
+                        errorEl.textContent = errorData.detail || (isEditMode ? '게시글 수정에 실패했습니다.' : '게시글 작성에 실패했습니다.');
+                        errorEl.style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error('네트워크 오류:', error);
+                    errorEl.textContent = '네트워크 오류로 작업에 실패했습니다.';
+                    errorEl.style.display = 'block';
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = isEditMode ? '수정 완료' : '저장';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

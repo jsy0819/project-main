@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>글 작성/수정</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="/index.html" class="nav-brand">MSA Project</a>
+            <div class="nav-links">
+                <a href="/board/board_list.html" class="nav-link">게시판</a>
+                <a href="/blog/blog_list.html" class="nav-link">블로그</a>
+            </div>
+            <div id="auth-links" class="nav-auth"></div>
+        </div>
+    </nav>
+    <main class="container">
+        <div class="form-container">
+            <h1 id="form-title">새 글 작성</h1>
+            <form id="post-form">
+                <p id="error-message" style="color:red;"></p>
+                <div>
+                    <label for="title">제목:</label>
+                    <input type="text" id="title" name="title" required>
+                </div>
+                <div>
+                    <label for="content">내용:</label>
+                    <textarea id="content" name="content" rows="10" required></textarea>
+                </div>
+                <div>
+                    <label for="tags">태그 (쉼표로 구분):</label>
+                    <input type="text" id="tags" name="tags">
+                </div>
+                <div>
+                    <label for="image">이미지 (여러 개 선택 가능):</label>
+                    <input type="file" id="image" name="image" accept="image/*" multiple>
+                </div>
+                <button type="submit" class="btn btn-secondary" style="width: 100%; margin-top: 10px;">저장</button>
+            </form>
+        </div>
+    </main>
+    <script src="/assets/js/auth.js"></script>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const postType = params.get('type') || 'board';
+        const postId = params.get('id');
+        const isEditMode = !!postId;
+
+        const form = document.getElementById('post-form');
+        const titleInput = document.getElementById('title');
+        const contentInput = document.getElementById('content');
+        const tagsInput = document.getElementById('tags');
+        const imageInput = document.getElementById('image');
+        const formTitle = document.getElementById('form-title');
+        const errorEl = document.getElementById('error-message');
+        
+        async function initializeForm() {
+            const user = await getCurrentUser();
+            renderNavbar(user);
+
+            if (!user) {
+                alert('글을 작성하려면 로그인이 필요합니다.');
+                window.location.href = '/login.html';
+                return;
+            }
+
+            const resourceName = (postType === 'board') ? 'posts' : 'articles';
+            formTitle.innerText = isEditMode ? `${postType} 글 수정` : `새 ${postType} 글 작성`;
+            
+            if (isEditMode) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/${postType}/${resourceName}/${postId}`);
+                    if (!response.ok) throw new Error('게시글 정보를 불러오는데 실패했습니다.');
+                    
+                    const data = await response.json();
+                    const post = data.post || data.article;
+
+                    if (user.id !== post.owner_id) {
+                         alert('수정 권한이 없습니다.');
+                         window.history.back();
+                         return;
+                    }
+
+                    titleInput.value = post.title;
+                    contentInput.value = post.content;
+                    if(tagsInput) tagsInput.value = post.tags || '';
+
+                } catch(error) {
+                    errorEl.innerText = error.message;
+                }
+            }
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorEl.innerText = '';
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerText = '저장 중...';
+
+            const resourceName = 'articles';
+            const url = isEditMode ? `${API_BASE_URL}/api/blog/${resourceName}/${postId}` : `${API_BASE_URL}/api/blog/${resourceName}`;
+            const method = isEditMode ? 'PATCH' : 'POST';
+
+            const textData = {
+                title: titleInput.value,
+                content: contentInput.value,
+                tags: tagsInput.value,
+            };
+
+            try {
+                const user = await getCurrentUser();
+                if (!user || !user.id) {
+                    throw new Error('로그인 정보가 유효하지 않습니다. 다시 로그인 해주세요.');
+                }
+                const userId = user.id;
+                const textResponse = await fetch(url, {
+                    method: method,
+                    headers: { 
+                        'Content-Type': 'application/json', 
+                        'X-User-Id': userId
+                    },
+                    body: JSON.stringify(textData),
+                    credentials: 'include'
+                });
+                
+                if (!textResponse.ok) {
+                    const errorData = await textResponse.json();
+                    throw new Error(errorData.detail || '게시글 저장에 실패했습니다.');
+                }
+                const savedPost = await textResponse.json();
+                const newPostId = savedPost.id;
+                
+                const imageFiles = imageInput.files;
+                if (imageFiles.length > 0) {
+                    const formData = new FormData();
+                    for (const file of imageFiles) {
+                        formData.append("files", file);
+                    }
+                      
+                    const imageUploadUrl = `${API_BASE_URL}/api/blog/${resourceName}/${newPostId}/upload-images`;
+                    const imageResponse = await fetch(imageUploadUrl, {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'include'
+                    });
+                    console.log(formData); 
+                    if (!imageResponse.ok) throw new Error('이미지 업로드에 실패했습니다.');
+                }
+                
+                alert('성공적으로 저장되었습니다.');
+                const detailPage = (postType === 'board') ? 'board_detail.html' : 'blog_detail.html';
+                window.location.href = `/${detailPage}?id=${newPostId}`;
+
+            } catch (error) {
+                errorEl.innerText = error.message;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = '저장';
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', initializeForm);
+    </script>
+</body>
+</html>

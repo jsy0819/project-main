@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>사용자 프로필</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Raleway">
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+<div class="w3-content">
+    <nav class="navbar">
+        <div class="container">
+            <a href="/index.html" class="nav-brand">🚀 MSA Project</a>
+            <div class="nav-links">
+                <a href="/board_list.html" class="nav-link">게시판</a>
+                <a href="/blog_list.html" class="nav-link">블로그</a>
+            </div>
+            <div id="auth-links" class="nav-auth"></div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div id="profile-card-container" class="w3-card-4 w3-white w3-margin">
+            <div style="padding: 2rem; text-align: center;">로딩 중...</div>
+        </div>
+
+        <div id="user-posts-container" class="w3-card-4 w3-white w3-margin">
+            <div class="w3-container w3-padding">
+                <h3>작성한 글 목록</h3>
+            </div>
+            <div id="user-posts-list" class="post-list">
+                </div>
+        </div>
+    </main>
+</div>
+
+<script src="/assets/js/auth.js"></script>
+<script>
+    const params = new URLSearchParams(window.location.search);
+    const profileCard = document.getElementById('profile-card-container');
+    const userPostsList = document.getElementById('user-posts-list');
+    const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+    
+    // --- 페이지의 모든 내용을 그리는 메인 함수 ---
+    async function renderPage(userId, loggedInUser) {
+        // 1. 프로필 사용자 정보 가져와서 그리기
+        try {
+            const profileUserResponse = await fetch(`${API_BASE_URL}/api/users/${userId}`);
+            if (!profileUserResponse.ok) throw new Error('사용자를 찾을 수 없습니다.');
+            
+            const profileUser = await profileUserResponse.json();
+            renderProfileCard(profileUser, loggedInUser);
+        } catch (error) {
+            profileCard.innerHTML = `<div class="w3-container"><p style="color:red;">${error.message}</p></div>`;
+            return; // 프로필 로드 실패 시 글 목록도 로드하지 않음
+        }
+
+        // 2. 해당 사용자가 작성한 글 목록 가져와서 그리기
+        await renderUserPosts(userId);
+    }
+
+    // --- 프로필 카드 UI를 그리는 함수 ---
+    function renderProfileCard(profileUser, loggedInUser) {
+        let editButton = '';
+        if (loggedInUser && loggedInUser.id === profileUser.id) {
+            editButton = `<a href="/profile_edit.html" class="btn btn-primary" style="margin-left: auto;">프로필 수정</a>`;
+        }
+        profileCard.innerHTML = `
+            <div class="profile-header">
+                <img src="${profileUser.profile_image_url}" alt="${profileUser.username}" class="profile-image">
+                <div class="profile-info">
+                    <h1>${profileUser.username}</h1>
+                    <p>${profileUser.email}</p>
+                </div>
+                ${editButton}
+            </div>
+            <div class="w3-container w3-padding-large">
+                <h4>자기소개</h4>
+                <p>${profileUser.bio || '작성된 자기소개가 없습니다.'}</p>
+            </div>
+        `;
+    }
+
+    // --- 작성한 글 목록 UI를 그리는 함수 ---
+    async function renderUserPosts(userId) {
+        userPostsList.innerHTML = '<div class="w3-container"><p>작성한 글 로딩 중...</p></div>';
+        try {
+            const [ boardRes, blogRes ] = await Promise.all([
+                fetch(`${API_BASE_URL}/api/board/posts?owner_id=${userId}`),
+                fetch(`${API_BASE_URL}/api/blog/articles?owner_id=${userId}`)
+            ]);
+            const boardData = await boardRes.json();
+            const blogData = await blogRes.json();
+            
+            const allPosts = [
+                ...boardData.items.map(p => ({...p, type: 'board', type_ko: '게시판'})),
+                ...blogData.items.map(a => ({...a, type: 'blog', type_ko: '블로그 게시글'}))
+            ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            userPostsList.innerHTML = '';
+            if (allPosts.length === 0) {
+                userPostsList.innerHTML = '<div class="w3-container"><p>작성한 글이 없습니다.</p></div>';
+                return;
+            }
+            allPosts.forEach(post => {
+                const link = `/blog/${post.type}_detail.html?id=${post.id}`;
+                const formattedDate = new Date(post.created_at).toLocaleDateString('ko-KR', dateOptions);
+                userPostsList.innerHTML += `
+                    <div class="list-item">
+                        <div>
+                            <a href="${link}">${post.title}</a>
+                            <span class="w3-tag">${post.type_ko}</span>
+                        </div>
+                        <span class="post-meta">${formattedDate}</span>
+                    </div>`;
+            });
+        } catch (error) {
+            userPostsList.innerHTML = '<div class="w3-container" style="color:red;"><p>작성한 글을 불러오는 데 실패했습니다.</p></div>';
+        }
+    }
+
+    // ▼▼▼ 페이지가 로드될 때 실행되는 메인 로직 (수정됨) ▼▼▼
+    document.addEventListener('DOMContentLoaded', async () => {
+        let targetUserId = params.get('id'); // URL에서 id 파라미터 가져오기
+        const loggedInUser = await getCurrentUser();
+        
+        renderNavbar(loggedInUser); // 네비게이션 바 먼저 렌더링
+
+        if (!targetUserId) { // 1. URL에 id가 없는 경우
+            if (loggedInUser) {
+                // 2. 로그인 상태이면, 내 id를 사용
+                targetUserId = loggedInUser.id;
+            } else {
+                // 3. 비로그인 상태이면, 안내 메시지 표시하고 종료
+                document.querySelector('main').innerHTML = `
+                    <div class="w3-card-4 w3-white w3-margin w3-container" style="padding: 2rem;">
+                        <h2>프로필 보기</h2>
+                        <p>다른 사용자의 프로필을 보려면 주소창에 ?id=사용자ID 를 추가해야 합니다.</p>
+                        <p>내 프로필을 보려면 <a href="/login.html">로그인</a> 해주세요.</p>
+                    </div>`;
+                return;
+            }
+        }
+        
+        // 최종 결정된 targetUserId로 페이지 렌더링 함수 호출
+        renderPage(targetUserId, loggedInUser);
+    });
+</script>
+</body>
+</html>

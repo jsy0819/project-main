@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>블로그 상세</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Raleway">
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <style>
+        /* 이 페이지 전용 슬라이드 및 추가 스타일 */
+        .slider-container {
+            position: relative;
+            width: 100%;
+            margin: auto;
+            overflow: hidden;
+        }
+        .slider-wrapper {
+            display: flex;
+            transition: transform 0.5s ease-in-out;
+        }
+        .slide {
+            min-width: 100%;
+            box-sizing: border-box;
+        }
+        .slide img {
+            width: 100%;
+            display: block;
+        }
+        .prev, .next {
+            cursor: pointer;
+            position: absolute;
+            top: 50%;
+            width: auto;
+            padding: 16px;
+            margin-top: -22px;
+            color: white;
+            font-weight: bold;
+            font-size: 24px;
+            transition: 0.6s ease;
+            border-radius: 0 3px 3px 0;
+            user-select: none;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .next {
+            right: 0;
+            border-radius: 3px 0 0 3px;
+        }
+        .prev:hover, .next:hover {
+            background-color: rgba(0,0,0,0.8);
+        }
+        .post-content { white-space: pre-wrap; line-height: 1.8; padding: 1.5rem; }
+        .w3-ul { list-style-type: none; padding: 0; margin: 0; }
+        .w3-ul li { padding: 8px 16px; border-bottom: 1px solid #ddd; }
+        .w3-ul li:last-child { border-bottom: none; }
+        .w3-hoverable li:hover { background-color: #f1f1f1; }
+    </style>
+</head>
+<body>
+<div class="w3-content">
+    <nav class="navbar">
+        <div class="container">
+            <a href="/index.html" class="nav-brand">🚀 MSA Project</a>
+            <div class="nav-links">
+                <a href="/board/board_list.html" class="nav-link">게시판</a>
+                <a href="/blog/blog_list.html" class="nav-link">블로그</a>
+            </div>
+            <div id="auth-links" class="nav-auth"></div>
+        </div>
+    </nav>
+
+    <div class="w3-row">
+        <div class="w3-col l8 s12">
+            <div id="article-container" class="w3-card-4 w3-margin w3-white">
+                <div class="w3-container w3-padding"><p>로딩 중...</p></div>
+            </div>
+        </div>
+
+        <aside class="w3-col l4">
+            <div id="about-me-card"></div>
+            <div id="popular-posts-card" class="w3-card-4 w3-margin"></div>
+            <div id="tags-card" class="w3-card-4 w3-margin w3-white"></div>
+        </aside>
+    </div>
+</div>
+
+<script src="/assets/js/auth.js"></script>
+<script>
+    const articleContainer = document.getElementById('article-container');
+    const aboutMeCard = document.getElementById('about-me-card');
+    const popularPostsCard = document.getElementById('popular-posts-card');
+    const tagsCard = document.getElementById('tags-card');
+    
+    const articleId = new URLSearchParams(window.location.search).get('id');
+    const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+
+    let slideIndex = 0;
+    let totalSlides = 0;
+
+    function moveSlide(n) {
+        slideIndex += n;
+        if (slideIndex >= totalSlides) { slideIndex = 0; }
+        if (slideIndex < 0) { slideIndex = totalSlides - 1; }
+        
+        const wrapper = document.querySelector('.slider-wrapper');
+        if (wrapper) {
+            wrapper.style.transform = `translateX(${-slideIndex * 100}%)`;
+        }
+    }
+
+    function renderArticle(data, loggedInUser) {
+        const { article, author, image_urls } = data;
+        const formattedDate = new Date(article.create_at).toLocaleDateString('ko-KR', dateOptions);
+        
+        let actionButtons = '';
+        if (loggedInUser && loggedInUser.id === article.owner_id) {
+            actionButtons = `
+                <a href="/blog/post_form.html?type=blog&id=${article.id}" class="btn btn-primary">수정</a>
+                <button id="delete-btn" class="btn btn-danger" style="margin-left: 0.5rem;">삭제</button>
+            `;
+        }
+
+        const sliderHTML = image_urls && image_urls.length > 0 ? `
+            <div class="slider-container">
+                <div class="slider-wrapper">
+                    ${image_urls.map(url => `<div class="slide"><img src="${url}" alt="게시물 이미지"></div>`).join('')}
+                </div>
+                ${image_urls.length > 1 ? `
+                    <a class="prev" onclick="moveSlide(-1)">&#10094;</a>
+                    <a class="next" onclick="moveSlide(1)">&#10095;</a>` : ''}
+            </div>` : '';
+
+        articleContainer.innerHTML = `
+            ${sliderHTML}
+            <header class="w3-container" style="padding-top: 1rem;">
+                <h3><b>${article.title}</b></h3>
+                <h5>${author.username || 'Unknown'}, <span class="w3-opacity">${formattedDate}</span></h5>
+            </header>
+            <div class="post-content">
+                <p>${article.content}</p>
+            </div>
+            <div class="w3-container w3-padding-large">
+                <a href="/blog/blog_list.html" class="w3-button w3-border"><b>« 목록으로</b></a>
+                <div style="float: right;">${actionButtons}</div>
+            </div>
+        `;
+        
+        totalSlides = image_urls ? image_urls.length : 0;
+        if (totalSlides > 0) moveSlide(0);
+
+        if (document.getElementById('delete-btn')) {
+            document.getElementById('delete-btn').addEventListener('click', async () => {
+                if (confirm('정말로 이 글을 삭제하시겠습니까?')) {
+                    const response = await fetch(`/api/blog/articles/${article.id}`, { method: 'DELETE', credentials: 'include' });
+                    if (response.ok) {
+                        alert('삭제되었습니다.');
+                        window.location.href = '/blog/blog_list.html';
+                    } else {
+                        alert('삭제에 실패했습니다.');
+                    }
+                }
+            });
+        }
+    }
+
+    function renderAboutMe(user) {
+        if (!user) { aboutMeCard.style.display = 'none'; return; }
+        aboutMeCard.innerHTML = `
+            <div class="w3-card-4 w3-margin w3-white">
+                <img src="${user.profile_image_url}" alt="My Photo" style="width:100%">
+                <div class="w3-container">
+                    <h4><b>${user.username}</b></h4>
+                    <p>${user.bio || '자기소개를 입력해주세요.'}</p>
+                </div>
+            </div>`;
+    }
+
+    async function renderPopularPosts() {
+        popularPostsCard.innerHTML = `<div class="w3-container w3-padding"><h4>Popular Posts</h4></div><p class="w3-container">로딩 중...</p>`;
+        try {
+            const response = await fetch(`/api/blog/popular-articles`);
+            const posts = await response.json();
+            const listItems = posts.map(post => `
+                <li class="w3-padding-16">
+                    <a href="/blog/blog_detail.html?id=${post.id}" style="text-decoration:none; color:inherit;">
+                        <span style="font-weight:500;">${post.title}</span><br>
+                        <span style="font-size:0.9em;">${post.content.substring(0, 50)}...</span>
+                    </a>
+                </li>`).join('');
+            popularPostsCard.innerHTML = `<div class="w3-container w3-padding"><h4>Popular Posts</h4></div><ul class="w3-ul w3-hoverable w3-white">${listItems}</ul>`;
+        } catch (error) {
+            popularPostsCard.querySelector('p').textContent = '인기글 로딩 실패';
+        }
+    }
+
+    async function renderTags() {
+        tagsCard.innerHTML = `<div class="w3-container w3-padding"><h4>Tags</h4></div><div class="w3-container"><p>로딩 중...</p></div>`;
+        try {
+            const response = await fetch(`/api/blog/tags`);
+            const tags = await response.json();
+            const tagItems = tags.map(tag => `<span class="w3-tag w3-black w3-margin-bottom" style="margin-right:5px; cursor:pointer;">${tag}</span>`).join(' ');
+            tagsCard.innerHTML = `<div class="w3-container w3-padding"><h4>Tags</h4></div><div class="w3-container" style="padding-bottom:16px;">${tagItems}</div>`;
+        } catch (error) {
+            tagsCard.querySelector('p').textContent = '태그 로딩 실패';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        if (!articleId) {
+            document.querySelector('.w3-row').innerHTML = '<h1>게시물 ID가 없습니다.</h1>';
+            return;
+        }
+
+        const loggedInUser = await getCurrentUser();
+        renderNavbar(loggedInUser);
+
+        try {
+            const response = await fetch(`/api/blog/articles/${articleId}`);
+            if (!response.ok) throw new Error('게시물을 찾을 수 없습니다.');
+            const data = await response.json();
+            
+            renderArticle(data, loggedInUser);
+            renderAboutMe(data.author);
+            renderPopularPosts();
+            renderTags();
+        } catch (error) {
+            articleContainer.innerHTML = `<div class="w3-container"><h3 style="color:red;">${error.message}</h3></div>`;
+        }
+    });
+</script>
+</body>
+</html>

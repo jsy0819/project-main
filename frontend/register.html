@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>회원가입</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="/index.html" class="nav-brand">🚀 MSA Project</a>
+            <div class="nav-links">
+                <a href="/board_list.html" class="nav-link">게시판</a>
+                <a href="/blog_list.html" class="nav-link">블로그</a>
+            </div>
+            <div id="auth-links" class="nav-auth"></div>
+        </div>
+    </nav>
+    <main class="container">
+        <div class="form-container">
+            <h1>회원가입</h1>
+            <form id="register-form">
+                <p id="error-message" style="color:red; text-align: center;"></p>
+                <div>
+                    <label for="username">사용자 이름:</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div>
+                    <label for="email">이메일 (로그인 ID):</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <div>
+                    <label for="password">비밀번호:</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <div>
+                    <label for="password_confirm">비밀번호 확인:</label>
+                    <input type="password" id="password_confirm" name="password_confirm" required>
+                </div>
+                <div>
+                    <label for="bio">자기소개 (선택사항):</label>
+                    <textarea id="bio" name="bio" rows="3"></textarea>
+                </div>
+                <div>
+                    <label for="profile_image">프로필 사진 (선택사항):</label>
+                    <input type="file" id="profile_image" name="profile_image" accept="image/*">
+                </div>
+                <button type="submit" id="submit-btn" class="btn btn-secondary" style="width: 100%; margin-top: 10px;">가입하기</button>
+                <p style="text-align: center; margin-top: 1rem; font-size: 0.9em;">
+                    이미 계정이 있으신가요? <a href="/login.html">로그인</a>
+                </p>
+            </form>
+        </div>
+    </main>
+    <script>
+        document.getElementById('register-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submit-btn');
+            const errorEl = document.getElementById('error-message');
+            errorEl.innerText = '';
+            submitBtn.disabled = true;
+            submitBtn.innerText = '처리 중...';
+
+            const password = document.getElementById('password').value;
+            const passwordConfirm = document.getElementById('password_confirm').value;
+            const imageInput = document.getElementById('profile_image');
+            
+            // 1. 비밀번호 확인
+            if (password !== passwordConfirm) {
+                errorEl.innerText = '비밀번호가 일치하지 않습니다.';
+                submitBtn.disabled = false;
+                submitBtn.innerText = '가입하기';
+                return;
+            }
+
+            // 2. 텍스트 데이터만 먼저 추출
+            const formData = new FormData(e.target);
+            const textData = {
+                username: formData.get('username'),
+                email: formData.get('email'),
+                password: password,
+                bio: formData.get('bio')
+            };
+            console.log(textData);
+            try {
+                // 3. 텍스트 데이터로 회원가입 및 자동 로그인 요청
+                const registerResponse = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(textData)
+                });
+                
+                if (!registerResponse.ok) {
+                    const errorData = await registerResponse.json();
+                    throw new Error(errorData.detail || '회원가입에 실패했습니다.');
+                }
+                
+                // 4. 프로필 사진 파일이 있으면, 이어서 이미지 업로드 요청
+                const imageFile = imageInput.files[0];
+                if (imageFile) {
+                    const imageFormData = new FormData();
+                    imageFormData.append("file", imageFile);
+
+                    const imageResponse = await fetch('/api/users/me/upload-image', {
+                        method: 'POST',
+                        body: imageFormData,
+                        credentials: 'include' // 자동 로그인된 세션 쿠키를 보내기 위해 필수
+                    });
+
+                    if (!imageResponse.ok) {
+                        console.error('이미지 업로드에 실패했지만, 회원가입은 완료되었습니다.');
+                    }
+                }
+
+                alert('회원가입이 완료되었습니다. 메인 페이지로 이동합니다.');
+                window.location.href = '/index.html';
+
+            } catch(error) {
+                errorEl.innerText = error.message;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = '가입하기';
+            }
+        });
+    </script>
+</body>
+</html>

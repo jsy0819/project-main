@@ -1,0 +1,179 @@
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - 80:80
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./uploads/profiles:/usr/share/nginx/html/static/profiles
+      - ./uploads/images:/usr/share/nginx/html/static/images
+      - D:/project-main/frontend/board:/usr/share/nginx/html/board
+      - ./uploads/board_files:/usr/share/nginx/html/static/board_files
+    depends_on:
+      - api_gateway
+    networks:
+      - webnet
+
+  api_gateway:
+    build: ./gateway
+    volumes:
+      - ./gateway/app:/app
+    ports:
+      - 8080:8000
+    environment:
+      - USER_SERVICE_URL=http://user_service:8001
+      - BLOG_SERVICE_URL=http://blog_service:8002
+      - BOARD_SERVICE_URL=http://board_service:8003
+    depends_on:
+      user_service: 
+        condition: service_started
+      blog_service:
+        condition: service_started
+      board_service:
+        condition: service_started
+    networks:
+      - webnet
+
+  user_service:
+    build: ./services/user_service
+    volumes:
+      - ./services/user_service/app:/app
+      - ./uploads/profiles:/app/static/profiles
+    environment:
+      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@user_db:3306/user_db
+      - REDIS_URL=${REDIS_URL}
+    depends_on:
+      user_db:
+        condition: service_healthy
+      redis_db:
+        condition: service_healthy
+    networks:
+      - webnet
+  blog_service:
+    build: ./services/blog_service
+    volumes:
+      - ./services/blog_service/app:/app
+      - ./uploads/images:/app/static/images
+    environment:
+      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@blog_db:3306/blog_db
+      - USER_SERVICE_URL=http://user_service:8001
+      - REDIS_URL=${REDIS_URL}
+    depends_on:
+      blog_db:
+        condition: service_healthy
+    networks:
+      - webnet
+  board_service:
+    build: ./services/board_service
+    volumes:
+      - ./services/board_service/app:/app
+      - ./uploads/board_files:/app/uploads
+    environment:
+      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@board_db:3306/board_db
+      - USER_SERVICE_URL=http://user_service:8001
+      - REDIS_URL=${REDIS_URL}
+    depends_on:
+      board_db:
+        condition: service_healthy
+    networks:
+      - webnet
+
+  board_worker:
+    build: ./services/board_service # board_service와 동일한 환경을 사용
+    volumes:
+      - ./services/board_service/app:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@board_db:3306/board_db
+      - REDIS_URL=${REDIS_URL}
+    # Uvicorn 대신 worker.py를 실행하도록 명령어 변경
+    command: ["python", "worker.py"]
+    depends_on:
+      board_db:
+        condition: service_healthy
+      redis_db:
+        condition: service_healthy
+    networks:
+      - webnet
+
+  user_db:
+    image: mysql:8.0
+    ports:
+      - "33061:3306"
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      - MYSQL_ROOT_PASSWORD=${USER_DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=user_db
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping","-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - webnet
+    volumes:
+      - user_db_data:/var/lib/mysql
+
+  blog_db:
+    image: mysql:8.0
+    ports:
+      - "33062:3306"
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      - MYSQL_ROOT_PASSWORD=${USER_DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=blog_db
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping","-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - webnet
+    volumes:
+      - blog_db_data:/var/lib/mysql
+
+  board_db:
+    image: mysql:8.0
+    ports:
+      - "33063:3306"
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      - MYSQL_ROOT_PASSWORD=${USER_DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=board_db
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping","-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - webnet
+    volumes:
+      - board_db_data:/var/lib/mysql
+  
+  redis_db:
+    image: redis:alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - webnet
+
+networks:
+  webnet:
+
+volumes:
+  user_db_data:
+  blog_db_data:
+  board_db_data:

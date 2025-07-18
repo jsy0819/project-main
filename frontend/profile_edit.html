@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>프로필 수정</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="/index.html" class="nav-brand">MSA Project</a>
+            <div class="nav-links">
+                <a href="/board/board_list.html" class="nav-link">게시판</a>
+                <a href="/blog/blog_list.html" class="nav-link">블로그</a>
+            </div>
+            <div id="auth-links" class="nav-auth"></div>
+        </div>
+    </nav>
+    <main class="container">
+        <div class="form-container">
+            <h1>프로필 수정</h1>
+            <form id="profile-form">
+                <p id="profile-error" style="color:red; text-align: center;"></p>
+                <div style="text-align: center; margin-bottom: 1rem;">
+                    <img id="profile-image-preview" src="" alt="Profile Preview" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 3px solid #eee;">
+                </div>
+                <div>
+                    <label for="email">이메일 (변경 불가):</label>
+                    <input type="email" id="email" name="email" readonly style="background-color: #e9ecef;">
+                </div>
+                <div>
+                    <label for="bio">자기소개:</label>
+                    <textarea id="bio" name="bio" rows="4"></textarea>
+                </div>
+                <div>
+                    <label for="profile_image">프로필 이미지 변경:</label>
+                    <input type="file" id="profile_image" name="profile_image" accept="image/*">
+                </div>
+                <button type="submit" id="profile-submit-btn">정보 저장</button>
+            </form>
+        </div>
+
+        <div class="form-container" style="margin-top: 2rem;">
+            <h2>비밀번호 변경</h2>
+            <form id="password-form">
+                <p id="password-error" style="color:red; text-align: center;"></p>
+                <div>
+                    <label for="current_password">현재 비밀번호:</label>
+                    <input type="password" id="current_password" required>
+                </div>
+                <div>
+                    <label for="new_password">새 비밀번호:</label>
+                    <input type="password" id="new_password" required>
+                </div>
+                <div>
+                    <label for="new_password_confirm">새 비밀번호 확인:</label>
+                    <input type="password" id="new_password_confirm" required>
+                </div>
+                <button type="submit" id="password-submit-btn">비밀번호 변경</button>
+            </form>
+        </div>
+    </main>
+
+    <script src="/assets/js/auth.js"></script>
+    <script>
+        const profileForm = document.getElementById('profile-form');
+        const emailInput = document.getElementById('email');
+        const bioInput = document.getElementById('bio');
+        const imageInput = document.getElementById('profile_image');
+        const imagePreview = document.getElementById('profile-image-preview');
+        const profileErrorEl = document.getElementById('profile-error');
+        const profileSubmitBtn = document.getElementById('profile-submit-btn');
+
+        const passwordForm = document.getElementById('password-form');
+        const passwordErrorEl = document.getElementById('password-error');
+
+        function populateProfileForm(user) {
+            if (!user) {
+                alert("로그인이 필요합니다.");
+                window.location.href = "/login.html";
+                return;
+            }
+            emailInput.value = user.email || '';
+            bioInput.value = user.bio || '';
+            imagePreview.src = user.profile_image_url || 'https://www.w3schools.com/w3images/avatar_g.jpg';
+        }
+
+        profileForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            profileErrorEl.innerText = '';
+            profileSubmitBtn.disabled = true;
+            profileSubmitBtn.innerText = '저장 중...';
+
+            try {
+                const textData = { bio: bioInput.value };
+                const textResponse = await fetch('/api/users/me', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(textData),
+                    credentials: 'include'
+                });
+
+                if (!textResponse.ok) {
+                    const errorData = await textResponse.json();
+                    throw new Error(errorData.detail || '프로필 정보 저장에 실패했습니다.');
+                }
+
+                const imageFile = imageInput.files[0];
+                if (imageFile) {
+                    const formData = new FormData();
+                    formData.append("file", imageFile);
+
+                    const imageResponse = await fetch('/api/users/me/upload-image', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'include'
+                    });
+                    if (!imageResponse.ok) {
+                        throw new Error('이미지 업로드에 실패했습니다.');
+                    }
+                }
+
+                alert('프로필이 성공적으로 수정되었습니다.');
+                window.location.reload();
+
+            } catch (error) {
+                profileErrorEl.innerText = error.message;
+            } finally {
+                profileSubmitBtn.disabled = false;
+                profileSubmitBtn.innerText = '정보 저장';
+            }
+        });
+        
+        passwordForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const newPassword = document.getElementById('new_password').value;
+            const newPasswordConfirm = document.getElementById('new_password_confirm').value;
+            
+            passwordErrorEl.innerText = '';
+
+            if (newPassword !== newPasswordConfirm) {
+                passwordErrorEl.innerText = '새 비밀번호가 일치하지 않습니다.';
+                return;
+            }
+
+            const data = {
+                current_password: document.getElementById('current_password').value,
+                new_password: newPassword
+            };
+
+            try {
+                const response = await fetch('/api/auth/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    alert('비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요.');
+                    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+                    document.cookie = "session_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+                    window.location.href = '/login.html';
+                } else {
+                    const errorData = await response.json();
+                    passwordErrorEl.innerText = errorData.detail || '비밀번호 변경에 실패했습니다.';
+                }
+            } catch (error) {
+                passwordErrorEl.innerText = '서버와 통신할 수 없습니다.';
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await getCurrentUser();
+            renderNavbar(user);
+            populateProfileForm(user);
+        });
+    </script>
+</body>
+</html>
